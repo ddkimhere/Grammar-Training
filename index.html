@@ -455,15 +455,41 @@ function shouldForceBoxStyle(question) {
 function formatPassageForDisplay(question) {
     let passage = String(question?.passage ?? '');
 
-    // (A)~(E), A.~E. 등이 한 줄로 붙어 오면 자동 줄바꿈
-    passage = passage
-        .replace(/\s*(\([A-E]\))/g, '\n$1')
-        .replace(/\s*([A-E]\.)\s+/g, '\n$1 ');
+    // 이미 줄바꿈이 없고 (A)~(E) / A.~E. 묶음이 한 줄로 들어온 경우
+    // 각 항목을 반드시 한 줄씩 보이도록 강하게 분리한다.
+    const hasChoiceBundle = /(?:\([A-E]\)|(?:^|\s)[A-E]\.)/.test(passage);
 
-    // 맨 앞에 생긴 불필요한 줄바꿈 제거
-    passage = passage.replace(/^\n+/, '');
+    if (hasChoiceBundle) {
+        const parts = [];
+        const regex = /(\([A-E]\)|(?:^|\s)([A-E]\.))\s*([\s\S]*?)(?=(?:\s*\([A-E]\)|\s+[A-E]\.)|$)/g;
+        let match;
 
-    return passage.trim();
+        while ((match = regex.exec(passage)) !== null) {
+            const label = (match[1] || '').trim();
+            const body = (match[3] || '').trim();
+            if (label && body) {
+                parts.push(`${label} ${body}`);
+            }
+        }
+
+        if (parts.length >= 2) {
+            passage = parts.join('\n');
+        } else {
+            // 혹시 정규식 매칭이 어긋나도 최소한 표지 앞에서는 줄바꿈
+            passage = passage
+                .replace(/\s*(\([A-E]\))/g, '\n$1')
+                .replace(/\s+([A-E]\.)\s+/g, '\n$1 ');
+        }
+    } else {
+        passage = passage
+            .replace(/\s*(\([A-E]\))/g, '\n$1')
+            .replace(/\s+([A-E]\.)\s+/g, '\n$1 ');
+    }
+
+    // 맨 앞 공백/줄바꿈 정리
+    passage = passage.replace(/^\s*\n+/, '').trim();
+
+    return passage;
 }
 
 }
