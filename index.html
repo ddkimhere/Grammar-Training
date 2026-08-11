@@ -34,6 +34,12 @@
         background: white;
         line-height: 1.55;
     }
+    .passage-plain {
+        margin: 6px 0 8px;
+        padding: 0;
+        background: transparent;
+        line-height: 1.55;
+    }
     .exam-option {
         line-height: 1.55;
         padding: 1px 0;
@@ -358,6 +364,7 @@ function getExamResponseSchema() {
                         score: { type: 'NUMBER' },
                         instruction: { type: 'STRING' },
                         passage: { type: 'STRING' },
+                        passageStyle: { type: 'STRING', enum: ['box', 'plain', 'none'] },
                         options: { type: 'ARRAY', items: { type: 'STRING' } },
                         answer: { type: 'STRING' },
                         translation: { type: 'STRING' },
@@ -365,7 +372,7 @@ function getExamResponseSchema() {
                         rubric: { type: 'STRING' }
                     },
                     required: [
-                        'id', 'type', 'difficulty', 'score', 'instruction', 'passage',
+                        'id', 'type', 'difficulty', 'score', 'instruction', 'passage', 'passageStyle',
                         'options', 'answer', 'translation', 'explanation', 'rubric'
                     ]
                 }
@@ -470,7 +477,7 @@ async function generateExam() {
 
     const prompt = `
 # Role
-당신은 20년 이상의 경력을 가진 수도권 베테랑 초·중·고 영어 교사입니다. 초등 고학년부터 고등학교까지 학년별 영어 수준과 실제 학교 평가의 출제 방식, 문법 함정, 서술형 채점 기준에 능통합니다.
+당신은 10년 이상의 경력을 가진 베테랑 초·중·고 영어 교사입니다. 초등 고학년부터 고등학교까지 학년별 영어 수준과 실제 학교 평가의 출제 방식, 문법 함정, 서술형 채점 기준에 능통합니다.
 
 # Task
 제시된 문법 범위를 바탕으로 실제 내신 대비용 영어 문법 시험을 출제하세요. 결과는 반드시 아래 JSON 구조만 출력하세요.
@@ -482,7 +489,13 @@ async function generateExam() {
 - essay: 정확히 ${essayCount}문항, id ${mcCount + 1}~${totalCount}
 - multiple_choice의 options는 정확히 5개, essay의 options는 반드시 빈 배열 []로 작성하세요.
 - 객관식 정답 번호 1~5는 가능한 한 균등하게 분포
-- 어법상 옳은/틀린 문장의 개수를 묻는 유형의 (A), (B), (C) 문장들은 passage에서 \\n으로 줄바꿈
+- 어법상 옳은/틀린 문장의 개수를 묻는 유형의 (A), (B), (C) 문장들은 passage에서 \n으로 줄바꿈
+- passageStyle은 반드시 'box', 'plain', 'none' 중 하나로 지정하세요.
+- passageStyle='box': 학생이 직접 보고 판단·수정·변형해야 하는 핵심 제시문일 때만 사용하세요. 예: 빈칸이 있는 문장, 밑줄 친 오류 문장, 고칠 문장, 바꿔 쓸 문장, 조건에 따라 결합할 문장, (A)~(E) 문장 묶음.
+- passageStyle='plain': 풀이에 필요한 짧은 문맥이나 참고 문장이지만 네모 테두리로 강조할 필요가 없을 때 사용하세요.
+- passageStyle='none': 보기만 읽으면 풀 수 있는 문제에는 반드시 사용하세요. 이 경우 passage는 반드시 빈 문자열 ''로 두세요.
+- 특히 '다음 중 어법상 알맞은 문장은?', '다음 중 어법상 틀린 문장은?', '다음 중 올바른 표현은?'처럼 각 선택지가 완전한 문장/표현인 객관식은 별도의 예문이나 설명 문장을 passage에 만들지 말고 passage='' 및 passageStyle='none'으로 작성하세요.
+- 문제를 풍성하게 보이게 하려고 불필요한 예문 묶음을 passage에 추가하지 마세요. 제시문은 정답 판단에 실제로 필요한 경우에만 만드세요.
 
 2. 난이도 및 배점
 - 하 ${ratioLow}% / 중 ${ratioMid}% / 상 ${ratioHigh}%
@@ -512,6 +525,8 @@ async function generateExam() {
 - instruction에는 문제의 한국어 지시문과 필요한 한국어 조건만 넣으세요.
 - 문제에서 제시하는 영어 문장, 예문, 문장 묶음은 반드시 passage에만 넣고 instruction에 반복해서 넣지 마세요.
 - 특히 essay 문항에서 영어 제시문을 instruction과 passage에 중복 출력하지 마세요.
+- passageStyle='none'인 문항은 해석지용 translation에서도 존재하지 않는 추가 passage를 해석하지 마세요.
+- passageStyle='box'는 핵심 제시문에만 제한적으로 사용하여 시험지에 불필요한 네모칸이 많아지지 않게 하세요.
 
 5. JSON 및 표시 안전 규칙
 - JSON 구조는 API의 응답 스키마가 강제하므로 필드 이름과 자료형을 바꾸지 마세요.
@@ -533,8 +548,9 @@ async function generateExam() {
       "difficulty": "하",
       "score": 3.0,
       "instruction": "다음 중 어법상 알맞은 문장은?",
-      "passage": "He goes to school every day.",
-      "options": ["보기1", "보기2", "보기3", "보기4", "보기5"],
+      "passage": "",
+      "passageStyle": "none",
+      "options": ["He goes to school every day.", "보기2", "보기3", "보기4", "보기5"],
       "answer": "2",
       "translation": "그는 매일 학교에 간다.",
       "explanation": "3인칭 단수 현재형이므로 goes가 알맞다.",
@@ -666,7 +682,14 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
         examHtml += `<article class="question-box text-[11px]">`;
         const displayInstruction = cleanInstructionForDisplay(q.instruction, q.passage);
         examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${q.id}. ${renderFormattedText(displayInstruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(q.score)}점</span></div>`;
-        if (q.passage) examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
+        if (q.passage) {
+            const style = q.passageStyle || 'box';
+            if (style === 'box') {
+                examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
+            } else if (style === 'plain') {
+                examHtml += `<div class="passage-plain" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
+            }
+        }
 
         if (q.type === 'multiple_choice') {
             examHtml += `<div class="mt-1.5">`;
