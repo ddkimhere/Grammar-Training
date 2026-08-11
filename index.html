@@ -275,6 +275,70 @@ function textWithBreaks(value) {
     return renderFormattedText(value);
 }
 
+// Gemini가 JSON 문자열 내부에 실제 줄바꿈/탭 같은 제어문자를 넣더라도
+// JSON.parse가 실패하지 않도록 문자열 내부의 제어문자만 안전하게 이스케이프한다.
+function sanitizeGeminiJson(rawText) {
+    let source = String(rawText ?? '').trim();
+
+    // 혹시 코드펜스가 섞여 오면 제거한다.
+    source = source
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '');
+
+    let result = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i];
+        const code = source.charCodeAt(i);
+
+        if (!inString) {
+            result += ch;
+            if (ch === '"') inString = true;
+            continue;
+        }
+
+        if (escaped) {
+            result += ch;
+            escaped = false;
+            continue;
+        }
+
+        if (ch === '\\') {
+            result += ch;
+            escaped = true;
+            continue;
+        }
+
+        if (ch === '"') {
+            result += ch;
+            inString = false;
+            continue;
+        }
+
+        if (ch === '\n') { result += '\\n'; continue; }
+        if (ch === '\r') { result += '\\r'; continue; }
+        if (ch === '\t') { result += '\\t'; continue; }
+        if (ch === '\b') { result += '\\b'; continue; }
+        if (ch === '\f') { result += '\\f'; continue; }
+
+        if (code < 0x20) {
+            result += '\\u' + code.toString(16).padStart(4, '0');
+            continue;
+        }
+
+        result += ch;
+    }
+
+    return result;
+}
+
+function parseGeminiJson(rawText) {
+    const cleaned = sanitizeGeminiJson(rawText);
+    return JSON.parse(cleaned);
+}
+
 function normalizeOptionText(value) {
     return String(value ?? '')
         .replace(/^\s*(?:\(\s*[1-5]\s*\)|[1-5][\.)]|[①②③④⑤])\s*/, '')
@@ -462,7 +526,12 @@ async function generateExam() {
         if (!data.candidates?.length) throw new Error('Gemini 응답이 없습니다.');
 
         const resultText = data.candidates[0].content.parts[0].text;
-        const examData = JSON.parse(resultText);
+        const examData = parseGeminiJson(resultText);
+
+        if (!examData || !Array.isArray(examData.questions)) {
+            throw new Error('AI 응답 형식이 올바르지 않습니다. 다시 생성해 주세요.');
+        }
+
         renderExam(examData, grade, unitNum, unitTitle, scope, mcCount);
     } catch (error) {
         alert('오류가 발생했습니다:\n' + error.message);
