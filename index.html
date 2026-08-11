@@ -38,6 +38,7 @@
         line-height: 1.55;
         padding: 1px 0;
     }
+    .yms-underline { text-decoration: underline; text-underline-offset: 2px; }
     .essay-lines {
         margin-top: 8px;
     }
@@ -109,9 +110,8 @@
     </div>
 
     <div class="space-y-4">
-        <div>
-            <label class="block text-sm font-semibold mb-1 text-red-500">Gemini API Key (필수)</label>
-            <input type="password" id="apiKey" placeholder="AI Studio에서 발급받은 API 키" class="w-full border p-3 rounded-lg bg-red-50">
+        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Gemini API 연결 준비 완료
         </div>
 
         <div>
@@ -237,6 +237,7 @@
 </div>
 
 <script>
+const FIXED_GEMINI_API_KEY = 'AQ.Ab8RN6Jv5EWnhuJXci4xOPcGBhUhuLdMKuu90p9Z7mClO926oQ';
 let currentView = 'exam';
 
 function escapeHtml(value) {
@@ -251,26 +252,25 @@ function escapeHtml(value) {
 function renderFormattedText(value) {
     let raw = String(value ?? '');
 
-    // 프롬프트에서 허용한 안전한 밑줄 표기와 과거 HTML 밑줄 표기를 모두 처리한다.
+    // 과거 HTML 밑줄 표기는 반드시 '완성된 한 쌍'일 때만 안전 표기로 변환한다.
     raw = raw
-        .replace(/\[\[u\]\]/gi, '___YMS_U_OPEN___')
-        .replace(/\[\[\/u\]\]/gi, '___YMS_U_CLOSE___');
-
-    // Gemini가 간혹 밑줄 표현을 HTML 태그로 반환하는 경우도 안전하게 처리한다.
-    raw = raw
-        .replace(/<\s*u\s*>/gi, '___YMS_U_OPEN___')
-        .replace(/<\s*\/\s*u\s*>/gi, '___YMS_U_CLOSE___')
-        .replace(/<\s*span\b[^>]*class\s*=\s*[\"']?[^>]*\bunderline\b[^>]*>/gi, '___YMS_U_OPEN___')
-        .replace(/<\s*\/\s*span\s*>/gi, '___YMS_U_CLOSE___')
-        // 그 밖의 HTML/XML 태그는 시험지에 코드로 노출되지 않도록 제거한다.
+        .replace(/<\s*u\s*>([\s\S]*?)<\s*\/\s*u\s*>/gi, '[[u]]$1[[/u]]')
+        .replace(/<\s*span\b[^>]*class\s*=\s*["']?[^>]*\bunderline\b[^>]*>([\s\S]*?)<\s*\/\s*span\s*>/gi, '[[u]]$1[[/u]]')
+        // 나머지 HTML/XML 태그는 모두 제거한다.
         .replace(/<\/?[A-Za-z][^>]*>/g, '');
 
+    // 밑줄은 [[u]]...[[/u]]가 정확히 짝을 이룬 경우에만 적용한다.
+    // 짝이 맞지 않는 표시는 제거해서 밑줄이 다음 문항까지 번지는 현상을 막는다.
+    raw = raw.replace(/\[\[u\]\]([\s\S]*?)\[\[\/u\]\]/gi, (_, inner) => {
+        return '___YMS_SAFE_U_OPEN___' + inner + '___YMS_SAFE_U_CLOSE___';
+    });
+    raw = raw.replace(/\[\[\/?u\]\]/gi, '');
+
     return escapeHtml(raw)
-        .replaceAll('___YMS_U_OPEN___', '<u>')
-        .replaceAll('___YMS_U_CLOSE___', '</u>')
+        .replaceAll('___YMS_SAFE_U_OPEN___', '<span class="yms-underline">')
+        .replaceAll('___YMS_SAFE_U_CLOSE___', '</span>')
         .replace(/\\n|\n/g, '<br>');
 }
-
 function textWithBreaks(value) {
     return renderFormattedText(value);
 }
@@ -317,7 +317,7 @@ function printSection(view) {
 }
 
 async function generateExam() {
-    const apiKey = document.getElementById('apiKey').value.trim();
+    const apiKey = FIXED_GEMINI_API_KEY;
     const grade = document.getElementById('grade').value;
     const unitNum = document.getElementById('unitNum').value.trim() || 'Unit 1';
     const unitTitle = document.getElementById('unitTitle').value.trim() || 'Grammar Test';
@@ -329,7 +329,6 @@ async function generateExam() {
     const ratioMid = document.getElementById('ratioMid').value;
     const ratioHigh = document.getElementById('ratioHigh').value;
 
-    if (!apiKey) { alert('Gemini API 키를 입력해주세요!'); return; }
     if (!scope) { alert('출제할 문법 범위를 입력해주세요!'); return; }
 
     document.getElementById('submitBtn').classList.add('hidden');
@@ -366,6 +365,9 @@ async function generateExam() {
 - JSON 외의 설명, 마크다운, 코드펜스는 출력하지 마세요.
 - instruction, passage, options, answer, translation, explanation, rubric 어느 필드에도 HTML/XML 태그를 절대 넣지 마세요. 예: <u>, </u>, <span>, </span>, <b>, <br> 사용 금지.
 - 밑줄이 필요한 문제는 HTML 대신 반드시 [[u]]밑줄 내용[[/u]] 형식으로 표시하세요.
+- [[u]]와 [[/u]]는 반드시 한 쌍으로 정확히 닫으세요. 열기 또는 닫기 표기만 단독으로 사용하지 마세요.
+- 밑줄은 문제에서 판단하거나 고쳐야 하는 특정 단어·구·부분에만 사용하세요. 문장 전체나 모든 보기에 밑줄을 긋지 마세요.
+- 빈칸 문제는 빈칸 자체를 밑줄 처리하지 말고 _____ 형태로 표시하세요.
 
 # JSON Schema
 {
