@@ -437,6 +437,35 @@ function isPassageDuplicateOfOptions(passage, options) {
         optionTexts.every(opt => opt.length >= 4 && passageNorm.includes(opt));
 
     return allOptionsInside;
+
+function shouldForceBoxStyle(question) {
+    const passage = String(question?.passage ?? '').trim();
+    if (!passage) return false;
+
+    // 빈칸 문장, 밑줄 문장, 수정/변형용 핵심 문장은 항상 박스
+    if (/_{3,}/.test(passage)) return true;
+    if (/\[\[u\]\].+?\[\[\/u\]\]/i.test(passage)) return true;
+
+    // (A)~(E), A.~E. 문장 묶음은 박스 안 핵심 제시문
+    if (/(?:^|\s)\([A-E]\)|(?:^|\s)[A-E]\./.test(passage)) return true;
+
+    return false;
+}
+
+function formatPassageForDisplay(question) {
+    let passage = String(question?.passage ?? '');
+
+    // (A)~(E), A.~E. 등이 한 줄로 붙어 오면 자동 줄바꿈
+    passage = passage
+        .replace(/\s*(\([A-E]\))/g, '\n$1')
+        .replace(/\s*([A-E]\.)\s+/g, '\n$1 ');
+
+    // 맨 앞에 생긴 불필요한 줄바꿈 제거
+    passage = passage.replace(/^\n+/, '');
+
+    return passage.trim();
+}
+
 }
 
 function cleanInstructionForDisplay(instruction, passage) {
@@ -535,6 +564,9 @@ async function generateExam() {
 - 어법상 옳은/틀린 문장의 개수를 묻는 유형의 (A), (B), (C) 문장들은 passage에서 \n으로 줄바꿈
 - passageStyle은 반드시 'box', 'plain', 'none' 중 하나로 지정하세요.
 - passageStyle='box': 학생이 직접 보고 판단·수정·변형해야 하는 핵심 제시문일 때만 사용하세요. 예: 빈칸이 있는 문장, 밑줄 친 오류 문장, 고칠 문장, 바꿔 쓸 문장, 조건에 따라 결합할 문장, (A)~(E) 문장 묶음.
+- 특히 '다음 문장의 빈칸에 들어갈 알맞은 말을 고르세요'처럼 문장 속 빈칸에 알맞은 말/표현을 고르는 객관식은, 그 빈칸 문장을 반드시 passage에 넣고 passageStyle='box'로 작성하세요.
+- (A)~(E) 또는 A.~E. 문장 묶음을 passage에 넣을 때는 각 문장을 반드시 줄바꿈 문자 
+ 로 구분하여 한 줄에 하나씩 작성하세요.
 - passageStyle='plain': 풀이에 필요한 짧은 문맥이나 참고 문장이지만 네모 테두리로 강조할 필요가 없을 때 사용하세요.
 - passageStyle='none': 보기만 읽으면 풀 수 있는 문제에는 반드시 사용하세요. 이 경우 passage는 반드시 빈 문자열 ''로 두세요.
 - 특히 '다음 중 어법상 알맞은 문장은?', '다음 중 어법상 틀린 문장은?', '다음 중 올바른 표현은?'처럼 각 선택지가 완전한 문장/표현인 객관식은 별도의 예문이나 설명 문장을 passage에 만들지 말고 passage='' 및 passageStyle='none'으로 작성하세요.
@@ -729,11 +761,12 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
         examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${q.id}. ${renderFormattedText(displayInstruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(q.score)}점</span></div>`;
         const duplicatePassage = q.type === 'multiple_choice' && isPassageDuplicateOfOptions(q.passage, q.options);
         if (q.passage && !duplicatePassage) {
-            const style = q.passageStyle || 'box';
+            const formattedPassage = formatPassageForDisplay(q);
+            const style = shouldForceBoxStyle(q) ? 'box' : (q.passageStyle || 'box');
             if (style === 'box') {
-                examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
+                examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(formattedPassage)}</div>`;
             } else if (style === 'plain') {
-                examHtml += `<div class="passage-plain" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
+                examHtml += `<div class="passage-plain" style="white-space:pre-line;">${textWithBreaks(formattedPassage)}</div>`;
             }
         }
 
