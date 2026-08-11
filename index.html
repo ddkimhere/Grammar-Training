@@ -396,6 +396,49 @@ function normalizeCompareText(value) {
         .trim();
 }
 
+
+function normalizeChoiceCompareText(value) {
+    return normalizeCompareText(
+        String(value ?? '')
+            .replace(/^\s*(?:\(?[A-Ea-e]\)?[\.\):]?|\[[A-Ea-e]\]|[①②③④⑤]|\(?[1-5]\)?[\.\):]?)\s*/, '')
+    ).toLowerCase();
+}
+
+function isPassageDuplicateOfOptions(passage, options) {
+    const passageRaw = String(passage ?? '').trim();
+    if (!passageRaw || !Array.isArray(options) || options.length === 0) return false;
+
+    const optionTexts = options
+        .map(opt => normalizeChoiceCompareText(normalizeOptionText(opt)))
+        .filter(Boolean);
+
+    if (optionTexts.length < 2) return false;
+
+    const passageLines = passageRaw
+        .split(/\r?\n/)
+        .map(line => normalizeChoiceCompareText(line))
+        .filter(Boolean);
+
+    // A~E 등의 문장 묶음이 아래 객관식 보기와 같은 순서로 반복된 경우
+    if (passageLines.length === optionTexts.length) {
+        const sameOrder = passageLines.every((line, i) => line === optionTexts[i]);
+        if (sameOrder) return true;
+
+        const sameSet = [...passageLines].sort().join('|||') === [...optionTexts].sort().join('|||');
+        if (sameSet) return true;
+    }
+
+    // 줄바꿈이 이상하게 합쳐져도 모든 보기가 passage 안에 그대로 들어 있으면 중복으로 본다.
+    const passageNorm = normalizeCompareText(passageRaw)
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+
+    const allOptionsInside = optionTexts.length >= 3 &&
+        optionTexts.every(opt => opt.length >= 4 && passageNorm.includes(opt));
+
+    return allOptionsInside;
+}
+
 function cleanInstructionForDisplay(instruction, passage) {
     let raw = String(instruction ?? '');
     const passageRaw = String(passage ?? '').trim();
@@ -495,6 +538,8 @@ async function generateExam() {
 - passageStyle='plain': 풀이에 필요한 짧은 문맥이나 참고 문장이지만 네모 테두리로 강조할 필요가 없을 때 사용하세요.
 - passageStyle='none': 보기만 읽으면 풀 수 있는 문제에는 반드시 사용하세요. 이 경우 passage는 반드시 빈 문자열 ''로 두세요.
 - 특히 '다음 중 어법상 알맞은 문장은?', '다음 중 어법상 틀린 문장은?', '다음 중 올바른 표현은?'처럼 각 선택지가 완전한 문장/표현인 객관식은 별도의 예문이나 설명 문장을 passage에 만들지 말고 passage='' 및 passageStyle='none'으로 작성하세요.
+- options에 들어 있는 5개 문장을 A~E, (A)~(E) 형태로 passage에 다시 복사하지 마세요. passage와 options에 같은 문장들이 중복되면 안 됩니다.
+- 객관식에서 A~E 문장 자체가 선택지라면 그 문장들은 options에만 넣고 passage는 빈 문자열, passageStyle은 'none'으로 작성하세요.
 - 문제를 풍성하게 보이게 하려고 불필요한 예문 묶음을 passage에 추가하지 마세요. 제시문은 정답 판단에 실제로 필요한 경우에만 만드세요.
 
 2. 난이도 및 배점
@@ -682,7 +727,8 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
         examHtml += `<article class="question-box text-[11px]">`;
         const displayInstruction = cleanInstructionForDisplay(q.instruction, q.passage);
         examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${q.id}. ${renderFormattedText(displayInstruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(q.score)}점</span></div>`;
-        if (q.passage) {
+        const duplicatePassage = q.type === 'multiple_choice' && isPassageDuplicateOfOptions(q.passage, q.options);
+        if (q.passage && !duplicatePassage) {
             const style = q.passageStyle || 'box';
             if (style === 'box') {
                 examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
