@@ -281,6 +281,40 @@ function normalizeOptionText(value) {
         .trim();
 }
 
+function normalizeCompareText(value) {
+    return String(value ?? '')
+        .replace(/<\/?[A-Za-z][^>]*>/g, '')
+        .replace(/\[\[\/?u\]\]/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function cleanInstructionForDisplay(instruction, passage) {
+    let raw = String(instruction ?? '');
+    const passageRaw = String(passage ?? '').trim();
+    if (!passageRaw) return raw;
+
+    // AI가 instruction 안에 passage를 그대로 반복한 경우 우선 정확히 제거한다.
+    if (raw.includes(passageRaw)) {
+        raw = raw.split(passageRaw).join('');
+    }
+
+    // 줄바꿈/밑줄 표기 차이 때문에 정확히 일치하지 않는 경우도 비교용 텍스트로 제거한다.
+    const passageNorm = normalizeCompareText(passageRaw);
+    if (passageNorm.length >= 8) {
+        raw = raw
+            .split(/\r?\n/)
+            .filter(line => {
+                const lineNorm = normalizeCompareText(line);
+                if (!lineNorm) return false;
+                return !(lineNorm.length >= 8 && (lineNorm === passageNorm || passageNorm.includes(lineNorm)));
+            })
+            .join('\n');
+    }
+
+    return raw.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function setButtonState(active) {
     const config = {
         exam: ['btnExamView', 'bg-slate-900', 'text-white'],
@@ -359,6 +393,9 @@ async function generateExam() {
 - 영어 문장이 없거나 단순 선택지라 해석이 불필요하면 빈 문자열로 두세요.
 - explanation에는 왜 정답인지, 왜 오답인지 핵심 문법 근거를 학생이 이해할 수 있게 설명하세요.
 - essay 문항은 rubric에 허용 가능한 정답, 필수 요소, 부분점 기준을 구체적으로 적으세요.
+- instruction에는 문제의 한국어 지시문과 필요한 한국어 조건만 넣으세요.
+- 문제에서 제시하는 영어 문장, 예문, 문장 묶음은 반드시 passage에만 넣고 instruction에 반복해서 넣지 마세요.
+- 특히 essay 문항에서 영어 제시문을 instruction과 passage에 중복 출력하지 마세요.
 
 4. JSON 및 표시 안전 규칙
 - 모든 문자열 안에서 큰따옴표를 직접 사용하지 말고 작은따옴표를 사용하세요.
@@ -456,7 +493,8 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
         }
 
         examHtml += `<article class="question-box text-[11px]">`;
-        examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${q.id}. ${renderFormattedText(q.instruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(q.score)}점</span></div>`;
+        const displayInstruction = cleanInstructionForDisplay(q.instruction, q.passage);
+        examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${q.id}. ${renderFormattedText(displayInstruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(q.score)}점</span></div>`;
         if (q.passage) examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(q.passage)}</div>`;
 
         if (q.type === 'multiple_choice') {
