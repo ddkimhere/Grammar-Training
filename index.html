@@ -120,6 +120,8 @@
             Gemini API 연결 준비 완료
         </div>
 
+        <button type="button" onclick="configureGeminiApiKey()" class="w-full border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold py-2.5 rounded-lg text-sm">Gemini API Key 설정 / 변경</button>
+
         <div>
             <label class="block text-sm font-semibold mb-1">1. 대상 학년</label>
             <select id="grade" class="w-full border p-3 rounded-lg bg-white">
@@ -245,7 +247,29 @@
 </div>
 
 <script>
-const FIXED_GEMINI_API_KEY = 'AQ.Ab8RN6Jv5EWnhuJXci4xOPcGBhUhuLdMKuu90p9Z7mClO926oQ';
+const GEMINI_API_KEY_STORAGE = 'yms_grammar_gemini_api_key';
+
+function getStoredGeminiApiKey() {
+    return (localStorage.getItem(GEMINI_API_KEY_STORAGE) || '').trim();
+}
+
+function configureGeminiApiKey() {
+    const current = getStoredGeminiApiKey();
+    const entered = window.prompt(
+        'Gemini API Key를 입력하세요. 이 키는 이 브라우저의 localStorage에만 저장됩니다.',
+        current
+    );
+    if (entered === null) return current;
+    const clean = entered.trim();
+    if (!clean) {
+        localStorage.removeItem(GEMINI_API_KEY_STORAGE);
+        alert('저장된 Gemini API Key를 삭제했습니다.');
+        return '';
+    }
+    localStorage.setItem(GEMINI_API_KEY_STORAGE, clean);
+    alert('Gemini API Key를 이 브라우저에 저장했습니다.');
+    return clean;
+}
 let currentView = 'exam';
 
 function escapeHtml(value) {
@@ -785,7 +809,12 @@ function printSection(view) {
 }
 
 async function generateExam() {
-    const apiKey = FIXED_GEMINI_API_KEY;
+    let apiKey = getStoredGeminiApiKey();
+    if (!apiKey) apiKey = configureGeminiApiKey();
+    if (!apiKey) {
+        alert('Gemini API Key를 먼저 설정해주세요.');
+        return;
+    }
     const grade = document.getElementById('grade').value;
     const unitNum = document.getElementById('unitNum').value.trim() || 'Unit 1';
     const unitTitle = document.getElementById('unitTitle').value.trim() || 'Grammar Test';
@@ -912,14 +941,14 @@ async function generateExam() {
         let lastJsonError = null;
 
         // JSON이 드물게 깨져 오더라도 사용자가 다시 버튼을 누를 필요 없도록
-        // 전체 생성을 최대 5회 자동 재시도한다.
-        for (let generationAttempt = 1; generationAttempt <= 5; generationAttempt++) {
+        // 전체 생성을 최대 3회 자동 재시도한다.
+        for (let generationAttempt = 1; generationAttempt <= 3; generationAttempt++) {
             let response = null;
             let httpDelay = 2500;
 
             // 429/503 같은 일시적 API 오류는 같은 생성 시도 안에서 재시도한다.
             for (let httpAttempt = 1; httpAttempt <= 3; httpAttempt++) {
-                response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -927,6 +956,7 @@ async function generateExam() {
                         generationConfig: {
                             responseMimeType: 'application/json',
                             responseSchema,
+                            thinkingConfig: { thinkingLevel: 'minimal' },
                             maxOutputTokens: 65536,
                             temperature: 0.35
                         }
@@ -979,14 +1009,14 @@ ${errText}`);
                 }
             }
 
-            if (generationAttempt < 5) {
+            if (generationAttempt < 3) {
                 document.getElementById('loadingMsg').innerText = `AI 응답 형식을 자동 복구 중입니다... (${generationAttempt}/5)`;
                 await new Promise(r => setTimeout(r, 1200));
             }
         }
 
         if (!examData) {
-            throw new Error(`AI 응답 JSON을 5회 생성했지만 정상 형식으로 받지 못했습니다.
+            throw new Error(`AI 응답 JSON을 3회 생성했지만 정상 형식으로 받지 못했습니다.
 ${lastJsonError?.message || ''}`);
         }
 
