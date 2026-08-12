@@ -437,6 +437,7 @@ function isPassageDuplicateOfOptions(passage, options) {
         optionTexts.every(opt => opt.length >= 4 && passageNorm.includes(opt));
 
     return allOptionsInside;
+}
 
 function shouldForceBoxStyle(question) {
     const passage = String(question?.passage ?? '').trim();
@@ -490,8 +491,6 @@ function formatPassageForDisplay(question) {
     passage = passage.replace(/^\s*\n+/, '').trim();
 
     return passage;
-}
-
 }
 
 function cleanInstructionForDisplay(instruction, passage) {
