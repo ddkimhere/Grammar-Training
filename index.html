@@ -493,6 +493,50 @@ function formatPassageForDisplay(question) {
     return passage;
 }
 
+
+function removeUnderlineMarkers(text) {
+    return String(text ?? '').replace(/\[\[u\]\](.*?)\[\[\/u\]\]/gi, '$1');
+}
+
+function shouldRemoveUnderlineForEssay(question) {
+    const instruction = String(question?.instruction ?? '');
+    const isEssay = String(question?.type ?? '') === 'essay';
+    if (!isEssay) return false;
+
+    const mentionsUnderline = /밑줄/.test(instruction);
+    const asksFindWrongPart = /틀린 부분|어법상 틀린 부분|어색한 부분/.test(instruction) && /찾아/.test(instruction);
+
+    return asksFindWrongPart && !mentionsUnderline;
+}
+
+function hasABBlanks(passage) {
+    const p = String(passage ?? '');
+    return /\(A\)/.test(p) && /\(B\)/.test(p);
+}
+
+function optionLooksLikeABPair(option) {
+    const t = String(option ?? '').trim();
+    return (/\(A\).*\(B\)/.test(t)) || (/[A-Za-z가-힣]+.*-\s*[A-Za-z가-힣]+/.test(t)) || (/,/.test(t));
+}
+
+function validateQuestionStructure(question) {
+    const q = question || {};
+    if (String(q.type) === 'multiple_choice') {
+        const options = Array.isArray(q.options) ? q.options : [];
+        if (options.length !== 5) {
+            throw new Error(`${q.id}번 객관식 보기 수가 5개가 아닙니다.`);
+        }
+
+        if (hasABBlanks(q.passage)) {
+            const ok = options.every(optionLooksLikeABPair);
+            if (!ok) {
+                throw new Error(`${q.id}번은 (A),(B) 두 칸 문제인데 보기에 A와 B가 함께 제시되지 않았습니다.`);
+            }
+        }
+    }
+    return true;
+}
+
 function cleanInstructionForDisplay(instruction, passage) {
     let raw = String(instruction ?? '');
     const passageRaw = String(passage ?? '').trim();
@@ -590,6 +634,7 @@ async function generateExam() {
 - passageStyle은 반드시 'box', 'plain', 'none' 중 하나로 지정하세요.
 - passageStyle='box': 학생이 직접 보고 판단·수정·변형해야 하는 핵심 제시문일 때만 사용하세요. 예: 빈칸이 있는 문장, 밑줄 친 오류 문장, 고칠 문장, 바꿔 쓸 문장, 조건에 따라 결합할 문장, (A)~(E) 문장 묶음.
 - 특히 '다음 문장의 빈칸에 들어갈 알맞은 말을 고르세요'처럼 문장 속 빈칸에 알맞은 말/표현을 고르는 객관식은, 그 빈칸 문장을 반드시 passage에 넣고 passageStyle='box'로 작성하세요.
+- 대화문이나 문장에 (A), (B) 두 개 이상의 빈칸이 있으면 각 보기(options)는 반드시 모든 빈칸의 답을 함께 포함해야 합니다. 예: '(A) often - (B) rarely' 또는 'often - rarely'처럼 작성하세요. (A)만 제시하고 (B)를 생략하면 안 됩니다.
 - (A)~(E) 또는 A.~E. 문장 묶음을 passage에 넣을 때는 각 문장을 반드시 줄바꿈 문자 
  로 구분하여 한 줄에 하나씩 작성하세요.
 - passageStyle='plain': 풀이에 필요한 짧은 문맥이나 참고 문장이지만 네모 테두리로 강조할 필요가 없을 때 사용하세요.
@@ -638,6 +683,7 @@ async function generateExam() {
 - 밑줄이 필요한 문제는 HTML 대신 반드시 [[u]]밑줄 내용[[/u]] 형식으로 표시하세요.
 - [[u]]와 [[/u]]는 반드시 한 쌍으로 정확히 닫으세요. 열기 또는 닫기 표기만 단독으로 사용하지 마세요.
 - 밑줄은 문제에서 판단하거나 고쳐야 하는 특정 단어·구·부분에만 사용하세요. 문장 전체나 모든 보기에 밑줄을 긋지 마세요.
+- 서술형에서 '틀린 부분을 찾아 바르게 고쳐 쓰세요'처럼 학생이 스스로 오류를 찾아 써야 하는 유형은, instruction에 '밑줄'이라고 명시되지 않은 이상 passage에 밑줄 표시를 하지 마세요.
 - 빈칸 문제는 빈칸 자체를 밑줄 처리하지 말고 _____ 형태로 표시하세요.
 
 # JSON Schema
@@ -732,6 +778,7 @@ ${errText}`);
                     if (parsed.questions.length !== totalCount) {
                         throw new Error(`문항 수가 ${parsed.questions.length}개로 생성되었습니다. 요청 문항 수는 ${totalCount}개입니다.`);
                     }
+                    parsed.questions.forEach(validateQuestionStructure);
                     examData = parsed;
                     break;
                 } catch (jsonError) {
@@ -776,18 +823,23 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
     const labels = ['①','②','③','④','⑤'];
 
     data.questions.forEach(q => {
-        if (q.type === 'essay' && !essayHeaderPrinted) {
+        const qForDisplay = { ...q };
+        if (shouldRemoveUnderlineForEssay(qForDisplay)) {
+            qForDisplay.passage = removeUnderlineMarkers(qForDisplay.passage);
+        }
+
+        if (qForDisplay.type === 'essay' && !essayHeaderPrinted) {
             examHtml += `<div class="question-box" style="column-span:all; margin-top:8px; margin-bottom:14px;"><div style="border-top:2px solid #111;border-bottom:1px solid #111;padding:6px 2px;font-size:12px;font-weight:800;">Ⅱ. 서술형</div></div>`;
             essayHeaderPrinted = true;
         }
 
         examHtml += `<article class="question-box text-[11px]">`;
-        const displayInstruction = cleanInstructionForDisplay(q.instruction, q.passage);
-        examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${q.id}. ${renderFormattedText(displayInstruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(q.score)}점</span></div>`;
-        const duplicatePassage = q.type === 'multiple_choice' && isPassageDuplicateOfOptions(q.passage, q.options);
-        if (q.passage && !duplicatePassage) {
-            const formattedPassage = formatPassageForDisplay(q);
-            const style = shouldForceBoxStyle(q) ? 'box' : (q.passageStyle || 'box');
+        const displayInstruction = cleanInstructionForDisplay(qForDisplay.instruction, qForDisplay.passage);
+        examHtml += `<div class="flex justify-between gap-3 font-bold text-[11.5px] leading-[1.55]"><span>${qForDisplay.id}. ${renderFormattedText(displayInstruction)}</span><span class="whitespace-nowrap text-[10px] font-normal text-gray-500">${escapeHtml(qForDisplay.score)}점</span></div>`;
+        const duplicatePassage = qForDisplay.type === 'multiple_choice' && isPassageDuplicateOfOptions(qForDisplay.passage, qForDisplay.options);
+        if (qForDisplay.passage && !duplicatePassage) {
+            const formattedPassage = formatPassageForDisplay(qForDisplay);
+            const style = shouldForceBoxStyle(qForDisplay) ? 'box' : (qForDisplay.passageStyle || 'box');
             if (style === 'box') {
                 examHtml += `<div class="passage-box" style="white-space:pre-line;">${textWithBreaks(formattedPassage)}</div>`;
             } else if (style === 'plain') {
@@ -795,15 +847,15 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
             }
         }
 
-        if (q.type === 'multiple_choice') {
+        if (qForDisplay.type === 'multiple_choice') {
             examHtml += `<div class="mt-1.5">`;
-            (q.options || []).forEach((opt, idx) => {
+            (qForDisplay.options || []).forEach((opt, idx) => {
                 const cleanOpt = normalizeOptionText(opt);
                 examHtml += `<div class="exam-option"><span class="font-bold mr-1">${labels[idx] || idx + 1}</span>${renderFormattedText(cleanOpt)}</div>`;
             });
             examHtml += `</div>`;
         } else {
-            const lineCount = q.instruction && q.instruction.length > 55 ? 4 : 3;
+            const lineCount = qForDisplay.instruction && qForDisplay.instruction.length > 55 ? 4 : 3;
             examHtml += `<div class="essay-lines">${'<div class="essay-line"></div>'.repeat(lineCount)}</div>`;
         }
         examHtml += `</article>`;
