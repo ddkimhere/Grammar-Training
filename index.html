@@ -509,14 +509,68 @@ function shouldRemoveUnderlineForEssay(question) {
     return asksFindWrongPart && !mentionsUnderline;
 }
 
-function hasABBlanks(passage) {
-    const p = String(passage ?? '');
-    return /\(A\)/.test(p) && /\(B\)/.test(p);
+function hasABBlanks(question) {
+    const q = question || {};
+    const instruction = String(q.instruction ?? '');
+    const passage = String(q.passage ?? '');
+
+    // '(A), (B)'가 단순 문장 번호인 문제는 제외하고,
+    // 문제 지시문에서 실제로 '빈칸 (A), (B)'라고 요구할 때만 두 칸 문제로 판정한다.
+    const instructionSaysBlank =
+        /빈칸/.test(instruction) &&
+        /\(A\)/.test(instruction) &&
+        /\(B\)/.test(instruction);
+
+    // 드물게 instruction 표현이 조금 달라도, passage에 A/B 표지와 실제 빈칸이 함께 있으면 인정.
+    const passageShowsBlank =
+        /\(A\)/.test(passage) &&
+        /\(B\)/.test(passage) &&
+        /_{3,}/.test(passage);
+
+    return instructionSaysBlank || passageShowsBlank;
 }
 
 function optionLooksLikeABPair(option) {
     const t = String(option ?? '').trim();
-    return (/\(A\).*\(B\)/.test(t)) || (/[A-Za-z가-힣]+.*-\s*[A-Za-z가-힣]+/.test(t)) || (/,/.test(t));
+
+    // 가장 바람직한 형식
+    if (/\(A\).*\(B\)/.test(t)) return true;
+
+    // AI가 '(B)' 표지만 빠뜨렸더라도 두 답이 구분되어 있으면 렌더링 단계에서 보정 가능
+    if (/\(A\).+?\s[-–—/]\s*.+/.test(t)) return true;
+    if (/^[^,]+,\s*[^,]+$/.test(t)) return true;
+    if (/^[^-–—/]+\s[-–—/]\s*[^-–—/]+$/.test(t)) return true;
+
+    return false;
+}
+
+function formatABPairOption(option) {
+    let t = String(option ?? '').trim();
+
+    if (/\(A\).*\(B\)/.test(t)) return t;
+
+    // '(A) often - rarely' → '(A) often - (B) rarely'
+    if (/^\(A\)\s*/.test(t)) {
+        t = t.replace(
+            /^(\(A\)\s*.+?)\s([-–—/])\s*(.+)$/,
+            '$1 $2 (B) $3'
+        );
+        if (/\(B\)/.test(t)) return t;
+    }
+
+    // 'often - rarely' → '(A) often - (B) rarely'
+    const pairMatch = t.match(/^(.+?)\s([-–—/])\s*(.+)$/);
+    if (pairMatch) {
+        return `(A) ${pairMatch[1].trim()} ${pairMatch[2]} (B) ${pairMatch[3].trim()}`;
+    }
+
+    // 'often, rarely' → '(A) often - (B) rarely'
+    const commaMatch = t.match(/^([^,]+),\s*([^,]+)$/);
+    if (commaMatch) {
+        return `(A) ${commaMatch[1].trim()} - (B) ${commaMatch[2].trim()}`;
+    }
+
+    return t;
 }
 
 function validateQuestionStructure(question) {
@@ -527,7 +581,7 @@ function validateQuestionStructure(question) {
             throw new Error(`${q.id}번 객관식 보기 수가 5개가 아닙니다.`);
         }
 
-        if (hasABBlanks(q.passage)) {
+        if (hasABBlanks(q)) {
             const ok = options.every(optionLooksLikeABPair);
             if (!ok) {
                 throw new Error(`${q.id}번은 (A),(B) 두 칸 문제인데 보기에 A와 B가 함께 제시되지 않았습니다.`);
@@ -634,7 +688,7 @@ async function generateExam() {
 - passageStyle은 반드시 'box', 'plain', 'none' 중 하나로 지정하세요.
 - passageStyle='box': 학생이 직접 보고 판단·수정·변형해야 하는 핵심 제시문일 때만 사용하세요. 예: 빈칸이 있는 문장, 밑줄 친 오류 문장, 고칠 문장, 바꿔 쓸 문장, 조건에 따라 결합할 문장, (A)~(E) 문장 묶음.
 - 특히 '다음 문장의 빈칸에 들어갈 알맞은 말을 고르세요'처럼 문장 속 빈칸에 알맞은 말/표현을 고르는 객관식은, 그 빈칸 문장을 반드시 passage에 넣고 passageStyle='box'로 작성하세요.
-- 대화문이나 문장에 (A), (B) 두 개 이상의 빈칸이 있으면 각 보기(options)는 반드시 모든 빈칸의 답을 함께 포함해야 합니다. 예: '(A) often - (B) rarely' 또는 'often - rarely'처럼 작성하세요. (A)만 제시하고 (B)를 생략하면 안 됩니다.
+- 대화문이나 문장에 (A), (B) 두 개 이상의 빈칸이 있으면 각 보기(options)는 반드시 모든 빈칸의 답을 함께 포함하고, 보기 안에도 (A)와 (B) 표지를 둘 다 명시하세요. 예: '(A) often - (B) rarely'. '(A) often - rarely'처럼 (B) 표지를 생략하면 안 됩니다.
 - (A)~(E) 또는 A.~E. 문장 묶음을 passage에 넣을 때는 각 문장을 반드시 줄바꿈 문자 
  로 구분하여 한 줄에 하나씩 작성하세요.
 - passageStyle='plain': 풀이에 필요한 짧은 문맥이나 참고 문장이지만 네모 테두리로 강조할 필요가 없을 때 사용하세요.
@@ -850,7 +904,10 @@ function renderExam(data, grade, unitNum, unitTitle, scope, mcCount) {
         if (qForDisplay.type === 'multiple_choice') {
             examHtml += `<div class="mt-1.5">`;
             (qForDisplay.options || []).forEach((opt, idx) => {
-                const cleanOpt = normalizeOptionText(opt);
+                let cleanOpt = normalizeOptionText(opt);
+                if (hasABBlanks(qForDisplay)) {
+                    cleanOpt = formatABPairOption(cleanOpt);
+                }
                 examHtml += `<div class="exam-option"><span class="font-bold mr-1">${labels[idx] || idx + 1}</span>${renderFormattedText(cleanOpt)}</div>`;
             });
             examHtml += `</div>`;
