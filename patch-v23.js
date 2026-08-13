@@ -1,9 +1,25 @@
 (function () {
     'use strict';
 
-    // v23: YMS Grammar Training output guards
+    // v24: YMS Grammar Training output guards
     // 1) Single-blank questions must not show a stray (A) label or broken subject line.
     // 2) A~E sentence bundles must not show stray trailing 1~5 numbers.
+    // 3) Exam header must include a handwritten date field.
+
+    // ----- Exam header date field -----
+    const examHeaderInfo = document.querySelector('#examSection header .text-right');
+    if (examHeaderInfo && !document.getElementById('examDateField')) {
+        const dateRow = document.createElement('div');
+        dateRow.id = 'examDateField';
+        dateRow.innerHTML = '날짜 <span class="inline-block w-28 border-b border-black">&nbsp;</span>';
+
+        const scoreRow = examHeaderInfo.lastElementChild;
+        if (scoreRow) {
+            examHeaderInfo.insertBefore(dateRow, scoreRow);
+        } else {
+            examHeaderInfo.appendChild(dateRow);
+        }
+    }
 
     const originalFormatPassage = window.formatPassageForDisplay;
 
@@ -70,7 +86,7 @@
                     init = { ...init, body: JSON.stringify(body) };
                 }
             } catch (e) {
-                console.warn('YMS v23 prompt guard could not modify request.', e);
+                console.warn('YMS v24 prompt guard could not modify request.', e);
             }
         }
 
