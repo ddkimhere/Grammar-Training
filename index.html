@@ -12,42 +12,33 @@ html,body{margin:0;min-height:100%;background:#f1f5f9;font-family:Arial,'Noto Sa
 <body>
 <div id="loading">YMS Grammar Training 불러오는 중...</div>
 <script>
-// Gemini v26 authentication compatibility:
-// convert the legacy ?key= request into the current x-goog-api-key header.
+// v27: Gemini requests are sent to the server-side Vercel endpoint.
+// The existing v25 patch still sees the original Gemini request first,
+// so all question-diversity and layout rules remain active.
 (function(){
   const nativeFetch = window.fetch.bind(window);
-  window.fetch = function(input, init){
-    let requestInput = input;
-    let requestInit = init ? { ...init } : {};
+  const proxyUrl = 'https://yms-grammar-api.vercel.app/api/gemini';
 
+  window.fetch = function(input, init){
     try {
       const rawUrl = typeof input === 'string' ? input : input?.url;
-      if (rawUrl && rawUrl.includes('generativelanguage.googleapis.com') && rawUrl.includes(':generateContent')) {
-        const url = new URL(rawUrl, window.location.href);
-        const apiKey = url.searchParams.get('key');
-
-        if (apiKey) {
-          url.searchParams.delete('key');
-          const headers = new Headers(requestInit.headers || (input instanceof Request ? input.headers : undefined));
-          headers.set('x-goog-api-key', apiKey);
-          requestInit.headers = headers;
-          requestInput = url.toString();
-        }
+      const isGemini = rawUrl && rawUrl.includes('generativelanguage.googleapis.com') && rawUrl.includes(':generateContent');
+      if (isGemini) {
+        return nativeFetch(proxyUrl, init);
       }
     } catch (error) {
-      console.warn('Gemini 인증 헤더 변환 오류', error);
+      console.warn('Vercel proxy routing error', error);
     }
-
-    return nativeFetch(requestInput, requestInit);
+    return nativeFetch(input, init);
   };
 })();
 
 (async function(){
   try {
-    const response = await fetch('./app-v22.html?v=23', { cache: 'no-store' });
+    const response = await fetch('./app-v22.html?v=27', { cache: 'no-store' });
     if (!response.ok) throw new Error('기본 페이지를 불러오지 못했습니다.');
     let html = await response.text();
-    const patchTag = '<scr' + 'ipt src="./patch-v23.js?v=25"></scr' + 'ipt>';
+    const patchTag = '<scr' + 'ipt src="./patch-v23.js?v=27"></scr' + 'ipt>';
     html = html.replace(/<\/body>/i, patchTag + '</body>');
     document.open();
     document.write(html);
