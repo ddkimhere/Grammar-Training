@@ -1,0 +1,126 @@
+name: Fix underline validation v28
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-underline-validation-v28.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch underline handling and cache version
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          patch_path = Path('patch-v23.js')
+          text = patch_path.read_text(encoding='utf-8')
+
+          marker = "    // Strengthen Gemini instructions without rewriting the large app file.\n"
+          if 'v28: malformed underline recovery' not in text:
+              block = r'''    // v28: malformed underline recovery
+    // Gemini 3.5 Flash-Lite can occasionally emit too many underline markers in a long exam.
+    // Repair safe cases before the base validator rejects the entire generated exam.
+    const originalValidateQuestionStructure = window.validateQuestionStructure;
+    if (typeof originalValidateQuestionStructure === 'function') {
+        window.validateQuestionStructure = function (question) {
+            const q = question || {};
+
+            if (String(q.type ?? '') === 'multiple_choice') {
+                const instruction = String(q.instruction ?? '');
+                const passage = String(q.passage ?? '');
+                const options = Array.isArray(q.options) ? q.options : [];
+                const underlineCount = (passage.match(/\[\[u\]\]/gi) || []).length;
+
+                if (/밑줄/.test(instruction) && underlineCount !== 1) {
+                    const correctionPair = options.length === 5 && options.every(opt =>
+                        /(?:->|→|⇒)/.test(String(opt ?? ''))
+                    );
+
+                    if (correctionPair) {
+                        // Correction-pair questions must not reveal the error location.
+                        q.instruction = '다음 문장에서 어법상 틀린 부분을 찾아 바르게 고친 것을 고르세요.';
+                        q.passage = passage
+                            .replace(/\[\[u\]\]([\s\S]*?)\[\[\/u\]\]/gi, '$1')
+                            .replace(/\[\[\/?u\]\]/gi, '');
+                        q.options = options.map(opt => String(opt ?? '')
+                            .replace(/\[\[u\]\]([\s\S]*?)\[\[\/u\]\]/gi, '$1')
+                            .replace(/\[\[\/?u\]\]/gi, ''));
+                    } else if (underlineCount > 1) {
+                        // Keep only the first complete underline target; strip underline markup from extras.
+                        let seen = 0;
+                        q.passage = passage
+                            .replace(/\[\[u\]\]([\s\S]*?)\[\[\/u\]\]/gi, (_, inner) => {
+                                seen += 1;
+                                return seen === 1 ? `[[u]]${inner}[[/u]]` : inner;
+                            })
+                            .replace(/\[\[\/?u\]\]/gi, '');
+
+                        if (seen === 1) {
+                            q.passage = q.passage.replace(
+                                q.passage.match(/\[\[u\]\]([\s\S]*?)\[\[\/u\]\]/i)?.[0] || '',
+                                m => m
+                            );
+                        }
+                    } else if (underlineCount === 0) {
+                        // If all five options are full sentences, safely convert to whole-sentence judgment.
+                        const sentenceOptions = options.length === 5 && options.every(opt => {
+                            const t = String(opt ?? '').trim();
+                            return /[.!?]$/.test(t) && t.split(/\s+/).length >= 3;
+                        });
+
+                        if (sentenceOptions) {
+                            q.instruction = /틀린|어색/.test(instruction)
+                                ? '다음 중 어법상 틀린 문장을 고르세요.'
+                                : '다음 중 어법상 알맞은 문장을 고르세요.';
+                            q.passage = '';
+                            q.passageStyle = 'none';
+                        }
+                    }
+                }
+            }
+
+            return originalValidateQuestionStructure(q);
+        };
+    }
+
+'''
+              if marker not in text:
+                  raise SystemExit('Patch insertion marker not found')
+              text = text.replace(marker, block + marker, 1)
+
+          needle = "- 빈칸이 정확히 1개인 문제에는 (A), (B) 같은 빈칸 번호를 절대 붙이지 마세요."
+          extra = "- 객관식에서는 [[u]]...[[/u]] 밑줄형 문제를 출제하지 마세요. 밑줄 수정형 대신 correction_pair(틀린 표현 → 고친 표현, 본문 밑줄 없음), whole_sentence_judgment, sentence_count, sentence_bundle 유형을 사용하세요. 서술형도 지시문이 명시적으로 밑줄을 요구하지 않으면 밑줄 표기를 사용하지 마세요.\\n"
+          if extra not in text:
+              if needle not in text:
+                  raise SystemExit('Prompt insertion marker not found')
+              text = text.replace(needle, extra + needle, 1)
+
+          text = text.replace('// v25: YMS Grammar Training output guards', '// v28: YMS Grammar Training output guards')
+          text = text.replace("console.warn('YMS v25 prompt guard could not modify request.'", "console.warn('YMS v28 prompt guard could not modify request.'")
+          patch_path.write_text(text, encoding='utf-8')
+
+          index_path = Path('index.html')
+          index = index_path.read_text(encoding='utf-8')
+          index = index.replace('./patch-v23.js?v=27', './patch-v23.js?v=28')
+          index = index.replace('// v27: Gemini requests are sent to the server-side Vercel endpoint.', '// v28: Gemini requests are sent to the server-side Vercel endpoint.')
+          index_path.write_text(index, encoding='utf-8')
+          PY
+
+      - name: Commit v28 fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add patch-v23.js index.html
+          if git diff --cached --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git commit -m 'Prevent malformed underline questions from breaking exam generation'
+          git push
