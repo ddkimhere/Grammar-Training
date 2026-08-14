@@ -12,9 +12,8 @@ html,body{margin:0;min-height:100%;background:#f1f5f9;font-family:Arial,'Noto Sa
 <body>
 <div id="loading">YMS Grammar Training 불러오는 중...</div>
 <script>
-// v27: Gemini requests are sent to the server-side Vercel endpoint.
-// The existing v25 patch still sees the original Gemini request first,
-// so all question-diversity and layout rules remain active.
+// v28: Gemini requests are sent to the server-side Vercel endpoint.
+// Existing layout/diversity rules remain active, followed by the v28 stability guard.
 (function(){
   const nativeFetch = window.fetch.bind(window);
   const proxyUrl = 'https://yms-grammar-api.vercel.app/api/gemini';
@@ -35,11 +34,12 @@ html,body{margin:0;min-height:100%;background:#f1f5f9;font-family:Arial,'Noto Sa
 
 (async function(){
   try {
-    const response = await fetch('./app-v22.html?v=27', { cache: 'no-store' });
+    const response = await fetch('./app-v22.html?v=28', { cache: 'no-store' });
     if (!response.ok) throw new Error('기본 페이지를 불러오지 못했습니다.');
     let html = await response.text();
-    const patchTag = '<scr' + 'ipt src="./patch-v23.js?v=27"></scr' + 'ipt>';
-    html = html.replace(/<\/body>/i, patchTag + '</body>');
+    const patchTags = '<scr' + 'ipt src="./patch-v23.js?v=28"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v28.js?v=28"></scr' + 'ipt>';
+    html = html.replace(/<\/body>/i, patchTags + '</body>');
     document.open();
     document.write(html);
     document.close();
