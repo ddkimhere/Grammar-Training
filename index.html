@@ -12,9 +12,9 @@ html,body{margin:0;min-height:100%;background:#f1f5f9;font-family:Arial,'Noto Sa
 <body>
 <div id="loading">YMS Grammar Training 불러오는 중...</div>
 <script>
-// v37: Gemini requests are sent to the server-side Vercel endpoint.
+// v38: Gemini requests are sent to the server-side Vercel endpoint.
 // Question blueprint, review, layout guards, higher difficulty, local correction validation,
-// and grade-by-difficulty vocabulary bands are layered in order.
+// grade-by-difficulty vocabulary bands, and whole-exam lexical diversity rules are layered in order.
 (function(){
   const nativeFetch = window.fetch.bind(window);
   const proxyUrl = 'https://yms-grammar-api.vercel.app/api/gemini';
@@ -35,18 +35,19 @@ html,body{margin:0;min-height:100%;background:#f1f5f9;font-family:Arial,'Noto Sa
 
 (async function(){
   try {
-    const response = await fetch('./app-v22.html?v=37', { cache: 'no-store' });
+    const response = await fetch('./app-v22.html?v=38', { cache: 'no-store' });
     if (!response.ok) throw new Error('기본 페이지를 불러오지 못했습니다.');
     let html = await response.text();
-    const patchTags = '<scr' + 'ipt src="./patch-v31.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v23.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v28.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v29.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v32.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v33.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v34.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v36.js?v=37"></scr' + 'ipt>' +
-                      '<scr' + 'ipt src="./patch-v37.js?v=37"></scr' + 'ipt>';
+    const patchTags = '<scr' + 'ipt src="./patch-v31.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v23.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v28.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v29.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v32.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v33.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v34.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v36.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v37.js?v=38"></scr' + 'ipt>' +
+                      '<scr' + 'ipt src="./patch-v38.js?v=38"></scr' + 'ipt>';
     html = html.replace(/<\/body>/i, patchTags + '</body>');
     document.open();
     document.write(html);
